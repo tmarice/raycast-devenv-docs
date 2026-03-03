@@ -16,7 +16,13 @@ type DocItem = {
 
 const NAV_URL = "https://raw.githubusercontent.com/cachix/devenv/main/docs/src/.nav.yml";
 const DOCS_BASE_URL = "https://raw.githubusercontent.com/cachix/devenv/main/docs/src";
+const GITHUB_API_BASE = "https://api.github.com/repos/cachix/devenv/contents/docs/src";
 const WEBSITE_BASE_URL = "https://devenv.sh";
+
+type GitHubFile = {
+  name: string;
+  type: "file" | "dir";
+};
 
 // Convert a path to a human-readable title
 function pathToTitle(path: string): string {
@@ -79,8 +85,41 @@ function extractGuideSection(nav: NavStructure): DocItem[] {
   return [];
 }
 
+// Resolve a relative path against a base path
+function resolveRelativePath(relativePath: string, basePath: string): string {
+  // Get the directory of the current document
+  const baseDir = basePath.includes("/") ? basePath.substring(0, basePath.lastIndexOf("/")) : "";
+
+  // Handle different relative path formats
+  let resolved = relativePath;
+
+  if (relativePath.startsWith("./")) {
+    resolved = baseDir ? `${baseDir}/${relativePath.slice(2)}` : relativePath.slice(2);
+  } else if (relativePath.startsWith("../")) {
+    const parts = baseDir.split("/").filter(Boolean);
+    let relParts = relativePath.split("/");
+
+    while (relParts[0] === "..") {
+      parts.pop();
+      relParts = relParts.slice(1);
+    }
+
+    resolved = [...parts, ...relParts].join("/");
+  } else if (!relativePath.startsWith("/") && !relativePath.startsWith("http")) {
+    // Relative path without ./ prefix
+    resolved = baseDir ? `${baseDir}/${relativePath}` : relativePath;
+  }
+
+  return resolved;
+}
+
+// Convert a doc path to a devenv.sh URL
+function pathToWebsiteUrl(path: string): string {
+  return `${WEBSITE_BASE_URL}/${path.replace(/\.md$/, "/").replace(/index\/$/, "")}`;
+}
+
 // Fix markdown content for Raycast rendering
-function fixMarkdown(content: string): string {
+function fixMarkdown(content: string, docPath: string): string {
   let result = content;
 
   // Fix admonitions: !!! type "title" -> blockquote
@@ -120,6 +159,26 @@ function fixMarkdown(content: string): string {
     }
   );
 
+  // Fix relative links: [text](relative/path.md) -> [text](https://devenv.sh/path/)
+  result = result.replace(
+    /\[([^\]]+)\]\(([^)]+)\)/g,
+    (match, text, href) => {
+      // Skip external links and pure anchors
+      if (href.startsWith("http") || href.startsWith("#") || href.startsWith("mailto:")) {
+        return match;
+      }
+
+      // Separate path and anchor
+      const [pathPart, anchor] = href.split("#");
+
+      // Resolve relative path and convert to website URL
+      const resolved = resolveRelativePath(pathPart, docPath);
+      const url = pathToWebsiteUrl(resolved) + (anchor ? `#${anchor}` : "");
+
+      return `[${text}](${url})`;
+    }
+  );
+
   return result;
 }
 
@@ -142,7 +201,27 @@ async function fetchMarkdown(path: string): Promise<string> {
     throw new Error(`Failed to fetch ${path}: ${response.statusText}`);
   }
   const text = await response.text();
-  return fixMarkdown(text);
+  return fixMarkdown(text, path);
+}
+
+// Fetch folder contents from GitHub API
+async function fetchFolderContents(folderPath: string): Promise<DocItem[]> {
+  const url = `${GITHUB_API_BASE}/${folderPath}`;
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error(`Failed to fetch folder ${folderPath}: ${response.statusText}`);
+  }
+  const files = (await response.json()) as GitHubFile[];
+
+  return files
+    .filter((file) => file.name.endsWith(".md") || file.type === "dir")
+    .filter((file) => file.name !== "index.md") // Skip index files in listing
+    .sort((a, b) => a.name.localeCompare(b.name))
+    .map((file) => ({
+      title: pathToTitle(file.name),
+      path: `${folderPath}/${file.name}`,
+      isFolder: file.type === "dir",
+    }));
 }
 
 // Detail view for markdown files
@@ -196,6 +275,23 @@ function DocsList({ items, title, revalidate }: { items: DocItem[]; title?: stri
   );
 }
 
+// List component for dynamically loaded folder contents
+function FolderDocsList({ folderPath, title }: { folderPath: string; title: string }) {
+  const { data: items, isLoading, revalidate } = useCachedPromise(
+    (path: string) => fetchFolderContents(path),
+    [folderPath],
+    { keepPreviousData: true }
+  );
+
+  return (
+    <List navigationTitle={title} isLoading={isLoading}>
+      {(items || []).map((item, index) => (
+        <DocListItem key={index} item={item} revalidate={revalidate} />
+      ))}
+    </List>
+  );
+}
+
 // Individual list item component
 function DocListItem({ item, revalidate }: { item: DocItem; revalidate?: () => void }) {
   const icon = item.isFolder ? Icon.Folder : Icon.Document;
@@ -226,10 +322,30 @@ function DocListItem({ item, revalidate }: { item: DocItem; revalidate?: () => v
     );
   }
 
-  if (item.isFolder) {
-    // Folder without children (would need to fetch folder contents)
-    // For now, just show it as non-interactive
-    return <List.Item title={item.title} icon={icon} />;
+  if (item.isFolder && item.path) {
+    // Folder without predefined children - fetch contents dynamically
+    return (
+      <List.Item
+        title={item.title}
+        icon={icon}
+        actions={
+          <ActionPanel>
+            <Action.Push
+              title="Open"
+              target={<FolderDocsList folderPath={item.path} title={item.title} />}
+            />
+            {revalidate && (
+              <Action
+                icon={Icon.ArrowClockwise}
+                title="Refresh Cache"
+                onAction={revalidate}
+                shortcut={{ modifiers: ["cmd"], key: "r" }}
+              />
+            )}
+          </ActionPanel>
+        }
+      />
+    );
   }
 
   // Markdown file - push to detail view
