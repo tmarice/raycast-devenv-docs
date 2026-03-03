@@ -14,6 +14,17 @@ type DocItem = {
   children?: DocItem[];
 };
 
+// Parsed markdown section
+type MarkdownSection = {
+  title: string;
+  content: string;
+  type?: string;
+  defaultValue?: string;
+};
+
+// Folders that should display options as a list instead of raw markdown
+const SECTIONED_FOLDERS = ["languages", "services", "supported-process-managers"];
+
 const NAV_URL = "https://raw.githubusercontent.com/cachix/devenv/main/docs/src/.nav.yml";
 const DOCS_BASE_URL = "https://raw.githubusercontent.com/cachix/devenv/main/docs/src";
 const GITHUB_API_BASE = "https://api.github.com/repos/cachix/devenv/contents/docs/src";
@@ -204,6 +215,92 @@ async function fetchMarkdown(path: string): Promise<string> {
   return fixMarkdown(text, path);
 }
 
+// Extract type from section content
+function extractType(content: string): string | undefined {
+  const match = content.match(/\*Type:\*\s*(.+?)(?:\n|$)/);
+  return match ? match[1].trim() : undefined;
+}
+
+// Extract default value from section content
+function extractDefault(content: string): string | undefined {
+  // Check for multiline code block first
+  const multilineMatch = content.match(/\*Default:\*\s*```[\w]*\n([\s\S]*?)```/);
+  if (multilineMatch) {
+    return multilineMatch[1]
+      .split("\n")
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0)
+      .join(" ");
+  }
+
+  // Fall back to single line inline code
+  const match = content.match(/\*Default:\*\s*(.+?)(?:\n|$)/);
+  return match ? match[1].trim().replace(/^`|`$/g, "") : undefined;
+}
+
+// Parse markdown into sections based on ### headings
+function parseMarkdownSections(content: string): MarkdownSection[] {
+  const sections: MarkdownSection[] = [];
+  const lines = content.split("\n");
+
+  let currentTitle = "";
+  let currentContent: string[] = [];
+
+  for (const line of lines) {
+    const headingMatch = line.match(/^### (.+)$/);
+    if (headingMatch) {
+      // Save previous section if exists
+      if (currentTitle) {
+        const sectionContent = currentContent.join("\n").trim();
+        sections.push({
+          title: currentTitle,
+          content: sectionContent,
+          type: extractType(sectionContent),
+          defaultValue: extractDefault(sectionContent),
+        });
+      }
+      currentTitle = headingMatch[1];
+      currentContent = [];
+    } else if (currentTitle) {
+      currentContent.push(line);
+    }
+  }
+
+  // Save last section
+  if (currentTitle) {
+    const sectionContent = currentContent.join("\n").trim();
+    sections.push({
+      title: currentTitle,
+      content: sectionContent,
+      type: extractType(sectionContent),
+      defaultValue: extractDefault(sectionContent),
+    });
+  }
+
+  return sections;
+}
+
+// Fetch raw markdown content (without fixes, for section parsing)
+async function fetchRawMarkdown(path: string): Promise<string> {
+  const url = `${DOCS_BASE_URL}/${path}`;
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error(`Failed to fetch ${path}: ${response.statusText}`);
+  }
+  return response.text();
+}
+
+// Fetch and parse markdown into sections
+async function fetchMarkdownSections(path: string): Promise<MarkdownSection[]> {
+  const content = await fetchRawMarkdown(path);
+  return parseMarkdownSections(content);
+}
+
+// Check if a path is in a sectioned folder
+function isSectionedPath(path: string): boolean {
+  return SECTIONED_FOLDERS.some((folder) => path.startsWith(`${folder}/`));
+}
+
 // Fetch folder contents from GitHub API
 async function fetchFolderContents(folderPath: string): Promise<DocItem[]> {
   const url = `${GITHUB_API_BASE}/${folderPath}`;
@@ -251,6 +348,89 @@ function DocsDetailView({ path, title }: { path: string; title: string }) {
         </ActionPanel>
       }
     />
+  );
+}
+
+// Detail view for a single section
+function SectionDetailView({ section, path, docTitle }: { section: MarkdownSection; path: string; docTitle: string }) {
+  const unescapedTitle = section.title.replace(/\\\./g, ".");
+  const markdown = fixMarkdown(`### ${unescapedTitle}\n\n${section.content}`, path);
+  const websiteUrl = `${WEBSITE_BASE_URL}/${path.replace(/\.md$/, "/").replace(/index\/$/, "")}`;
+
+  return (
+    <Detail
+      markdown={markdown}
+      navigationTitle={unescapedTitle}
+      actions={
+        <ActionPanel>
+          <Action.OpenInBrowser url={websiteUrl} title={`Open ${docTitle} on devenv.sh`} />
+          <Action.CopyToClipboard content={unescapedTitle} title="Copy Option Name" />
+        </ActionPanel>
+      }
+    />
+  );
+}
+
+// List view for markdown sections (options)
+function SectionedDocsList({ path, title }: { path: string; title: string }) {
+  const { data: sections, isLoading, revalidate } = useCachedPromise(
+    (p: string) => fetchMarkdownSections(p),
+    [path],
+    { keepPreviousData: true }
+  );
+
+  const websiteUrl = `${WEBSITE_BASE_URL}/${path.replace(/\.md$/, "/").replace(/index\/$/, "")}`;
+
+  return (
+    <List navigationTitle={title} isLoading={isLoading} searchBarPlaceholder="Search options...">
+      {(sections || []).map((section, index) => {
+        const unescapedTitle = section.title.replace(/\\\./g, ".");
+        const accessories: List.Item.Accessory[] = [];
+        const hasType = !!section.type;
+        const hasDefault = !!section.defaultValue;
+        const limit = hasType && hasDefault ? 30 : 70;
+
+        if (section.type) {
+          const truncatedType = section.type.length > limit
+            ? `${section.type.slice(0, limit)}...`
+            : section.type;
+          accessories.push({ tag: { value: `Type: ${truncatedType}` } });
+        }
+        if (section.defaultValue) {
+          const truncatedDefault = section.defaultValue.length > limit
+            ? `${section.defaultValue.slice(0, limit)}...`
+            : section.defaultValue;
+          accessories.push({ tag: { value: `Default: ${truncatedDefault}` } });
+        }
+
+        return (
+          <List.Item
+            key={index}
+            title={unescapedTitle}
+            icon={Icon.Gear}
+            accessories={accessories}
+            actions={
+              <ActionPanel>
+                <Action.Push
+                  title="View"
+                  target={<SectionDetailView section={section} path={path} docTitle={title} />}
+                />
+                <Action.OpenInBrowser url={websiteUrl} title={`Open ${title} on devenv.sh`} />
+                <Action.CopyToClipboard content={unescapedTitle} title="Copy Option Name" />
+              {revalidate && (
+                <Action
+                  icon={Icon.ArrowClockwise}
+                  title="Refresh"
+                  onAction={revalidate}
+                  shortcut={{ modifiers: ["cmd"], key: "r" }}
+                />
+              )}
+            </ActionPanel>
+          }
+        />
+        );
+      })}
+    </List>
   );
 }
 
@@ -348,9 +528,34 @@ function DocListItem({ item, revalidate }: { item: DocItem; revalidate?: () => v
     );
   }
 
-  // Markdown file - push to detail view
+  // Markdown file
   const websiteUrl = `${WEBSITE_BASE_URL}/${item.path.replace(/\.md$/, "/").replace(/index\/$/, "")}`;
 
+  // Use sectioned view for files in special folders
+  if (isSectionedPath(item.path)) {
+    return (
+      <List.Item
+        title={item.title}
+        icon={icon}
+        actions={
+          <ActionPanel>
+            <Action.Push title="View Options" target={<SectionedDocsList path={item.path} title={item.title} />} />
+            <Action.OpenInBrowser url={websiteUrl} title="Open on devenv.sh" />
+            {revalidate && (
+              <Action
+                icon={Icon.ArrowClockwise}
+                title="Refresh Cache"
+                onAction={revalidate}
+                shortcut={{ modifiers: ["cmd"], key: "r" }}
+              />
+            )}
+          </ActionPanel>
+        }
+      />
+    );
+  }
+
+  // Regular markdown file - push to detail view
   return (
     <List.Item
       title={item.title}
