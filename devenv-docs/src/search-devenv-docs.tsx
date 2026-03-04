@@ -149,58 +149,49 @@ function fixMarkdown(content: string, docPath: string): string {
   // Pattern: !!! type "optional title"
   //          optional blank line
   //          indented content (including blank lines within)
-  result = result.replace(
-    /^!!! (\w+)(?: "([^"]*)")?\n\n?((?:(?:    .*|)\n)*)/gm,
-    (_, type, title, body) => {
-      const typeCapitalized = type.charAt(0).toUpperCase() + type.slice(1);
-      const header = title ? `**${typeCapitalized}:** ${title}` : `**${typeCapitalized}**`;
-      const bodyLines = body
-        .split("\n")
-        .map((line: string) => line.replace(/^    /, ""))
-        .join("\n")
-        .trim();
+  result = result.replace(/^!!! (\w+)(?: "([^"]*)")?\n\n?((?:(?:[ ]{4}.*|)\n)*)/gm, (_, type, title, body) => {
+    const typeCapitalized = type.charAt(0).toUpperCase() + type.slice(1);
+    const header = title ? `**${typeCapitalized}:** ${title}` : `**${typeCapitalized}**`;
+    const bodyLines = body
+      .split("\n")
+      .map((line: string) => line.replace(/^[ ]{4}/, ""))
+      .join("\n")
+      .trim();
 
-      const quotedBody = bodyLines
-        .split("\n")
-        .map((line: string) => (line.trim() === "" ? ">" : `> ${line}`))
-        .join("\n");
+    const quotedBody = bodyLines
+      .split("\n")
+      .map((line: string) => (line.trim() === "" ? ">" : `> ${line}`))
+      .join("\n");
 
-      return `> ${header}\n${quotedBody}\n\n`;
-    }
-  );
+    return `> ${header}\n${quotedBody}\n\n`;
+  });
 
   // Fix tabs: === "Tab Name" -> ### Tab Name
-  result = result.replace(
-    /^=== "([^"]+)"\n((?:    .*\n?)*)/gm,
-    (_, tabName, body) => {
-      const bodyLines = body
-        .split("\n")
-        .map((line: string) => line.replace(/^    /, ""))
-        .join("\n")
-        .trim();
-      return `### ${tabName}\n\n${bodyLines}\n`;
-    }
-  );
+  result = result.replace(/^=== "([^"]+)"\n((?:[ ]{4}.*\n?)*)/gm, (_, tabName, body) => {
+    const bodyLines = body
+      .split("\n")
+      .map((line: string) => line.replace(/^[ ]{4}/, ""))
+      .join("\n")
+      .trim();
+    return `### ${tabName}\n\n${bodyLines}\n`;
+  });
 
   // Fix relative links: [text](relative/path.md) -> [text](https://devenv.sh/path/)
-  result = result.replace(
-    /\[([^\]]+)\]\(([^)]+)\)/g,
-    (match, text, href) => {
-      // Skip external links and pure anchors
-      if (href.startsWith("http") || href.startsWith("#") || href.startsWith("mailto:")) {
-        return match;
-      }
-
-      // Separate path and anchor
-      const [pathPart, anchor] = href.split("#");
-
-      // Resolve relative path and convert to website URL
-      const resolved = resolveRelativePath(pathPart, docPath);
-      const url = pathToWebsiteUrl(resolved) + (anchor ? `#${anchor}` : "");
-
-      return `[${text}](${url})`;
+  result = result.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (match, text, href) => {
+    // Skip external links and pure anchors
+    if (href.startsWith("http") || href.startsWith("#") || href.startsWith("mailto:")) {
+      return match;
     }
-  );
+
+    // Separate path and anchor
+    const [pathPart, anchor] = href.split("#");
+
+    // Resolve relative path and convert to website URL
+    const resolved = resolveRelativePath(pathPart, docPath);
+    const url = pathToWebsiteUrl(resolved) + (anchor ? `#${anchor}` : "");
+
+    return `[${text}](${url})`;
+  });
 
   return result;
 }
@@ -335,11 +326,9 @@ async function fetchFolderContents(folderPath: string): Promise<DocItem[]> {
 
 // Detail view for markdown files
 function DocsDetailView({ path, title }: { path: string; title: string }) {
-  const { data, isLoading, revalidate } = useCachedPromise(
-    (p: string) => fetchMarkdown(p),
-    [path],
-    { keepPreviousData: true }
-  );
+  const { data, isLoading, revalidate } = useCachedPromise((p: string) => fetchMarkdown(p), [path], {
+    keepPreviousData: true,
+  });
 
   const websiteUrl = `${WEBSITE_BASE_URL}/${path.replace(/\.md$/, "/").replace(/index\/$/, "")}`;
 
@@ -350,7 +339,7 @@ function DocsDetailView({ path, title }: { path: string; title: string }) {
       navigationTitle={title}
       actions={
         <ActionPanel>
-          <Action.OpenInBrowser url={websiteUrl} title="Open on devenv.sh" />
+          <Action.OpenInBrowser url={websiteUrl} title="Open on Devenv.sh" />
           <Action
             icon={Icon.ArrowClockwise}
             title="Refresh"
@@ -376,7 +365,7 @@ function SectionDetailView({ section, path, docTitle }: { section: MarkdownSecti
       navigationTitle={unescapedTitle}
       actions={
         <ActionPanel>
-          <Action.OpenInBrowser url={websiteUrl} title={`Open ${docTitle} on devenv.sh`} />
+          <Action.OpenInBrowser url={websiteUrl} title={`Open ${docTitle} on Devenv.sh`} />
           <Action.CopyToClipboard content={unescapedTitle} title="Copy Option Name" />
           <ReportIssueAction />
         </ActionPanel>
@@ -387,11 +376,11 @@ function SectionDetailView({ section, path, docTitle }: { section: MarkdownSecti
 
 // List view for markdown sections (options)
 function SectionedDocsList({ path, title }: { path: string; title: string }) {
-  const { data: sections, isLoading, revalidate } = useCachedPromise(
-    (p: string) => fetchMarkdownSections(p),
-    [path],
-    { keepPreviousData: true }
-  );
+  const {
+    data: sections,
+    isLoading,
+    revalidate,
+  } = useCachedPromise((p: string) => fetchMarkdownSections(p), [path], { keepPreviousData: true });
 
   const websiteUrl = `${WEBSITE_BASE_URL}/${path.replace(/\.md$/, "/").replace(/index\/$/, "")}`;
 
@@ -405,15 +394,12 @@ function SectionedDocsList({ path, title }: { path: string; title: string }) {
         const limit = hasType && hasDefault ? 30 : 70;
 
         if (section.type) {
-          const truncatedType = section.type.length > limit
-            ? `${section.type.slice(0, limit)}...`
-            : section.type;
+          const truncatedType = section.type.length > limit ? `${section.type.slice(0, limit)}...` : section.type;
           accessories.push({ tag: { value: `Type: ${truncatedType}` } });
         }
         if (section.defaultValue) {
-          const truncatedDefault = section.defaultValue.length > limit
-            ? `${section.defaultValue.slice(0, limit)}...`
-            : section.defaultValue;
+          const truncatedDefault =
+            section.defaultValue.length > limit ? `${section.defaultValue.slice(0, limit)}...` : section.defaultValue;
           accessories.push({ tag: { value: `Default: ${truncatedDefault}` } });
         }
 
@@ -429,20 +415,20 @@ function SectionedDocsList({ path, title }: { path: string; title: string }) {
                   title="View"
                   target={<SectionDetailView section={section} path={path} docTitle={title} />}
                 />
-                <Action.OpenInBrowser url={websiteUrl} title={`Open ${title} on devenv.sh`} />
+                <Action.OpenInBrowser url={websiteUrl} title={`Open ${title} on Devenv.sh`} />
                 <Action.CopyToClipboard content={unescapedTitle} title="Copy Option Name" />
-              {revalidate && (
-                <Action
-                  icon={Icon.ArrowClockwise}
-                  title="Refresh"
-                  onAction={revalidate}
-                  shortcut={{ modifiers: ["cmd"], key: "r" }}
-                />
-              )}
-              <ReportIssueAction />
-            </ActionPanel>
-          }
-        />
+                {revalidate && (
+                  <Action
+                    icon={Icon.ArrowClockwise}
+                    title="Refresh"
+                    onAction={revalidate}
+                    shortcut={{ modifiers: ["cmd"], key: "r" }}
+                  />
+                )}
+                <ReportIssueAction />
+              </ActionPanel>
+            }
+          />
         );
       })}
     </List>
@@ -472,11 +458,11 @@ function DocsList({ items, title, revalidate }: { items: DocItem[]; title?: stri
 
 // List component for dynamically loaded folder contents
 function FolderDocsList({ folderPath, title }: { folderPath: string; title: string }) {
-  const { data: items, isLoading, revalidate } = useCachedPromise(
-    (path: string) => fetchFolderContents(path),
-    [folderPath],
-    { keepPreviousData: true }
-  );
+  const {
+    data: items,
+    isLoading,
+    revalidate,
+  } = useCachedPromise((path: string) => fetchFolderContents(path), [folderPath], { keepPreviousData: true });
 
   return (
     <List navigationTitle={title} isLoading={isLoading}>
@@ -526,10 +512,7 @@ function DocListItem({ item, revalidate }: { item: DocItem; revalidate?: () => v
         icon={icon}
         actions={
           <ActionPanel>
-            <Action.Push
-              title="Open"
-              target={<FolderDocsList folderPath={item.path} title={item.title} />}
-            />
+            <Action.Push title="Open" target={<FolderDocsList folderPath={item.path} title={item.title} />} />
             {revalidate && (
               <Action
                 icon={Icon.ArrowClockwise}
@@ -557,7 +540,7 @@ function DocListItem({ item, revalidate }: { item: DocItem; revalidate?: () => v
         actions={
           <ActionPanel>
             <Action.Push title="View Options" target={<SectionedDocsList path={item.path} title={item.title} />} />
-            <Action.OpenInBrowser url={websiteUrl} title="Open on devenv.sh" />
+            <Action.OpenInBrowser url={websiteUrl} title="Open on Devenv.sh" />
             {revalidate && (
               <Action
                 icon={Icon.ArrowClockwise}
@@ -581,7 +564,7 @@ function DocListItem({ item, revalidate }: { item: DocItem; revalidate?: () => v
       actions={
         <ActionPanel>
           <Action.Push title="View" target={<DocsDetailView path={item.path} title={item.title} />} />
-          <Action.OpenInBrowser url={websiteUrl} title="Open on devenv.sh" />
+          <Action.OpenInBrowser url={websiteUrl} title="Open on Devenv.sh" />
           {revalidate && (
             <Action
               icon={Icon.ArrowClockwise}
@@ -598,7 +581,11 @@ function DocListItem({ item, revalidate }: { item: DocItem; revalidate?: () => v
 }
 
 export default function Command() {
-  const { data: items, isLoading, revalidate } = useCachedPromise(fetchNavYaml, [], {
+  const {
+    data: items,
+    isLoading,
+    revalidate,
+  } = useCachedPromise(fetchNavYaml, [], {
     keepPreviousData: true,
   });
 
