@@ -29,18 +29,6 @@ const NAV_URL = "https://raw.githubusercontent.com/cachix/devenv/main/docs/src/.
 const DOCS_BASE_URL = "https://raw.githubusercontent.com/cachix/devenv/main/docs/src";
 const GITHUB_API_BASE = "https://api.github.com/repos/cachix/devenv/contents/docs/src";
 const WEBSITE_BASE_URL = "https://devenv.sh";
-const GITHUB_ISSUES_URL = "https://github.com/tmarice/raycast-devenv-docs/issues";
-
-function ReportIssueAction() {
-  return (
-    <Action.OpenInBrowser
-      url={GITHUB_ISSUES_URL}
-      title="Report Issue"
-      icon={Icon.Bug}
-      shortcut={{ modifiers: ["cmd", "shift"], key: "i" }}
-    />
-  );
-}
 
 type GitHubFile = {
   name: string;
@@ -192,6 +180,9 @@ function fixMarkdown(content: string, docPath: string): string {
 
     return `[${text}](${url})`;
   });
+
+  // Fix escaped angle brackets: \< -> <, \> -> >
+  result = result.replace(/\\</g, "<").replace(/\\>/g, ">");
 
   return result;
 }
@@ -346,7 +337,6 @@ function DocsDetailView({ path, title }: { path: string; title: string }) {
             onAction={() => revalidate()}
             shortcut={{ modifiers: ["cmd"], key: "r" }}
           />
-          <ReportIssueAction />
         </ActionPanel>
       }
     />
@@ -355,7 +345,7 @@ function DocsDetailView({ path, title }: { path: string; title: string }) {
 
 // Detail view for a single section
 function SectionDetailView({ section, path, docTitle }: { section: MarkdownSection; path: string; docTitle: string }) {
-  const unescapedTitle = section.title.replace(/\\\./g, ".");
+  const unescapedTitle = section.title.replace(/\\\./g, ".").replace(/\\</g, "<").replace(/\\>/g, ">");
   const markdown = fixMarkdown(`### ${unescapedTitle}\n\n${section.content}`, path);
   const websiteUrl = `${WEBSITE_BASE_URL}/${path.replace(/\.md$/, "/").replace(/index\/$/, "")}`;
 
@@ -367,7 +357,6 @@ function SectionDetailView({ section, path, docTitle }: { section: MarkdownSecti
         <ActionPanel>
           <Action.OpenInBrowser url={websiteUrl} title={`Open ${docTitle} on Devenv.sh`} />
           <Action.CopyToClipboard content={unescapedTitle} title="Copy Option Name" />
-          <ReportIssueAction />
         </ActionPanel>
       }
     />
@@ -387,7 +376,7 @@ function SectionedDocsList({ path, title }: { path: string; title: string }) {
   return (
     <List navigationTitle={title} isLoading={isLoading} searchBarPlaceholder="Search options...">
       {(sections || []).map((section, index) => {
-        const unescapedTitle = section.title.replace(/\\\./g, ".");
+        const unescapedTitle = section.title.replace(/\\\./g, ".").replace(/\\</g, "<").replace(/\\>/g, ">");
         const accessories: List.Item.Accessory[] = [];
         const hasType = !!section.type;
         const hasDefault = !!section.defaultValue;
@@ -425,7 +414,6 @@ function SectionedDocsList({ path, title }: { path: string; title: string }) {
                     shortcut={{ modifiers: ["cmd"], key: "r" }}
                   />
                 )}
-                <ReportIssueAction />
               </ActionPanel>
             }
           />
@@ -497,7 +485,6 @@ function DocListItem({ item, revalidate }: { item: DocItem; revalidate?: () => v
                 shortcut={{ modifiers: ["cmd"], key: "r" }}
               />
             )}
-            <ReportIssueAction />
           </ActionPanel>
         }
       />
@@ -521,7 +508,6 @@ function DocListItem({ item, revalidate }: { item: DocItem; revalidate?: () => v
                 shortcut={{ modifiers: ["cmd"], key: "r" }}
               />
             )}
-            <ReportIssueAction />
           </ActionPanel>
         }
       />
@@ -549,7 +535,6 @@ function DocListItem({ item, revalidate }: { item: DocItem; revalidate?: () => v
                 shortcut={{ modifiers: ["cmd"], key: "r" }}
               />
             )}
-            <ReportIssueAction />
           </ActionPanel>
         }
       />
@@ -573,7 +558,6 @@ function DocListItem({ item, revalidate }: { item: DocItem; revalidate?: () => v
               shortcut={{ modifiers: ["cmd"], key: "r" }}
             />
           )}
-          <ReportIssueAction />
         </ActionPanel>
       }
     />
