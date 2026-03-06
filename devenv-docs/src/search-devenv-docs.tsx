@@ -321,7 +321,7 @@ function DocsDetailView({ path, title }: { path: string; title: string }) {
     keepPreviousData: true,
   });
 
-  const websiteUrl = `${WEBSITE_BASE_URL}/${path.replace(/\.md$/, "/").replace(/index\/$/, "")}`;
+  const websiteUrl = pathToWebsiteUrl(path);
 
   return (
     <Detail
@@ -347,7 +347,7 @@ function DocsDetailView({ path, title }: { path: string; title: string }) {
 function SectionDetailView({ section, path, docTitle }: { section: MarkdownSection; path: string; docTitle: string }) {
   const unescapedTitle = section.title.replace(/\\\./g, ".").replace(/\\</g, "<").replace(/\\>/g, ">");
   const markdown = fixMarkdown(`### ${unescapedTitle}\n\n${section.content}`, path);
-  const websiteUrl = `${WEBSITE_BASE_URL}/${path.replace(/\.md$/, "/").replace(/index\/$/, "")}`;
+  const websiteUrl = pathToWebsiteUrl(path);
 
   return (
     <Detail
@@ -371,7 +371,7 @@ function SectionedDocsList({ path, title }: { path: string; title: string }) {
     revalidate,
   } = useCachedPromise((p: string) => fetchMarkdownSections(p), [path], { keepPreviousData: true });
 
-  const websiteUrl = `${WEBSITE_BASE_URL}/${path.replace(/\.md$/, "/").replace(/index\/$/, "")}`;
+  const websiteUrl = pathToWebsiteUrl(path);
 
   return (
     <List navigationTitle={title} isLoading={isLoading} searchBarPlaceholder="Search options...">
@@ -515,7 +515,7 @@ function DocListItem({ item, revalidate }: { item: DocItem; revalidate?: () => v
   }
 
   // Markdown file
-  const websiteUrl = `${WEBSITE_BASE_URL}/${item.path.replace(/\.md$/, "/").replace(/index\/$/, "")}`;
+  const websiteUrl = pathToWebsiteUrl(item.path);
 
   // Use sectioned view for files in special folders
   if (isSectionedPath(item.path)) {
